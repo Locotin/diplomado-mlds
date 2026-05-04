@@ -1,1 +1,4 @@
 .venv/
+
+# Local agent skills
+.agents/skills/

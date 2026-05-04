@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "scikit-learn": {
+      "source": "davila7/claude-code-templates",
+      "sourceType": "github",
+      "computedHash": "f03f68164d506a6cdf7e8cae1e46bd38c0e1327248d9aaeece66cb4b6392a3c7"
+    }
+  }
+}
