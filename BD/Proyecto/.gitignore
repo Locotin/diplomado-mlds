@@ -1,0 +1,34 @@
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local runtime data
+data/input/*
+!data/input/.gitkeep

@@ -1,0 +1,72 @@
+services:
+  modelo:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_NAME: modelo
+    env_file:
+      - .env
+    ports:
+      - "${MODELO_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - emotion-net
+
+  ingesta:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_NAME: ingesta
+    env_file:
+      - .env
+    ports:
+      - "${INGESTA_PORT:-8001}:8001"
+    depends_on:
+      modelo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - emotion-net
+
+  input:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      args:
+        SERVICE_NAME: input
+    env_file:
+      - .env
+    ports:
+      - "${INPUT_PORT:-8002}:8002"
+    depends_on:
+      ingesta:
+        condition: service_healthy
+    volumes:
+      - ./data/input:/data/input
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - emotion-net
+
+networks:
+  emotion-net:
+    driver: bridge
