@@ -1,5 +1,3 @@
-from typing import Any
-
 import anyio
 import cloudinary
 import cloudinary.uploader
@@ -13,14 +11,20 @@ class CloudinaryService:
         cloudinary.config(cloud_name=cloud_name, api_key=api_key, api_secret=api_secret, secure=True)
 
     async def upload_image(self, *, file_bytes: bytes, filename: str, source_id: str) -> CloudinaryAsset:
-        upload_result = await anyio.to_thread.run_sync(
-            lambda: cloudinary.uploader.upload(
-                file_bytes,
-                resource_type="image",
-                folder=self._folder,
-                public_id=source_id,
-                overwrite=True,
-            )
+        return await anyio.to_thread.run_sync(
+            self.upload_image_sync,
+            file_bytes,
+            filename,
+            source_id,
+        )
+
+    def upload_image_sync(self, file_bytes: bytes, filename: str, source_id: str) -> CloudinaryAsset:
+        upload_result = cloudinary.uploader.upload(
+            file_bytes,
+            resource_type="image",
+            folder=self._folder,
+            public_id=source_id,
+            overwrite=True,
         )
         return CloudinaryAsset(
             asset_id=upload_result["asset_id"],

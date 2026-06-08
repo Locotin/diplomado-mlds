@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from app.config import Settings, get_settings
-from app.models import PredictionRecord
+from app.models import BatchPredictionResponse, PredictionRecord
 from app.utils.ids import generate_source_id
 
 router = APIRouter(tags=["uploads"])
@@ -78,3 +78,57 @@ async def upload_image(
         ) from exc
 
     return PredictionRecord.model_validate(payload)
+
+
+@router.post("/uploads/batch", response_model=BatchPredictionResponse, status_code=status.HTTP_201_CREATED)
+async def upload_images_batch(
+    request: Request,
+    files: Annotated[list[UploadFile], File(...)],
+    metadata_json: Annotated[str | None, Form()] = None,
+    batch_id: Annotated[str | None, Form()] = None,
+    settings: Settings = Depends(get_settings),
+) -> BatchPredictionResponse:
+    metadata = _parse_metadata(metadata_json)
+    metadata.setdefault("source", "batch-upload")
+    metadata.setdefault("client_host", request.client.host if request.client else "unknown")
+
+    max_bytes = settings.input_max_file_size_mb * 1024 * 1024
+    files_payload: list[dict[str, Any]] = []
+    for index, file in enumerate(files, start=1):
+        _ensure_image(file)
+
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File {index} is empty.")
+
+        if len(file_bytes) > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File {file.filename or index} exceeds the {settings.input_max_file_size_mb} MB limit.",
+            )
+
+        files_payload.append(
+            {
+                "filename": file.filename or generate_source_id(),
+                "file_bytes": file_bytes,
+                "content_type": file.content_type or "application/octet-stream",
+            }
+        )
+
+    ingesta_client = request.app.state.ingesta_client
+    try:
+        payload = await ingesta_client.create_prediction_batch(
+            files_payload=files_payload,
+            metadata=metadata,
+            batch_id=batch_id,
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text or "Ingesta service rejected the batch request."
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to reach the ingesta service.",
+        ) from exc
+
+    return BatchPredictionResponse.model_validate(payload)

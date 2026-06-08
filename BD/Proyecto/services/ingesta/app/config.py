@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str = ""
     cloudinary_folder: str = "emotion-stack"
     request_timeout_seconds: int = Field(default=60, ge=5)
+    dask_batch_workers: int = Field(default=4, ge=1, le=32)
+    dask_batch_partitions: int = Field(default=4, ge=1, le=64)
+    dask_manifest_preview_rows: int = Field(default=10, ge=1, le=100)
 
     @model_validator(mode="after")
     def validate_required_integrations(self) -> "Settings":

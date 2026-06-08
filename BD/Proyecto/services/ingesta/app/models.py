@@ -54,3 +54,32 @@ class PredictionRecord(BaseModel):
 class PredictionListResponse(BaseModel):
     items: list[PredictionRecord]
     total: int = Field(ge=0)
+
+
+class BatchManifestRow(BaseModel):
+    source_id: str
+    filename: str
+    content_type: str | None = None
+    byte_size: int = Field(ge=0)
+
+
+class BatchEmotionSummary(BaseModel):
+    top_emotion: str
+    count: int = Field(ge=0)
+
+
+class BatchPredictionFailure(BaseModel):
+    filename: str
+    detail: str
+    source_id: str | None = None
+
+
+class BatchPredictionResponse(BaseModel):
+    batch_id: str
+    total_received: int = Field(ge=0)
+    total_processed: int = Field(ge=0)
+    total_failed: int = Field(ge=0)
+    manifest_preview: list[BatchManifestRow] = Field(default_factory=list)
+    emotion_summary: list[BatchEmotionSummary] = Field(default_factory=list)
+    items: list[PredictionRecord] = Field(default_factory=list)
+    failures: list[BatchPredictionFailure] = Field(default_factory=list)

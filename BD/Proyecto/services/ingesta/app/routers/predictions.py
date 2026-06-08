@@ -1,14 +1,19 @@
 import json
+import re
+from pathlib import Path
 from typing import Annotated, Any
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi import Form as FormField
 
-from app.models import PredictionListResponse, PredictionRecord
+from app.models import BatchPredictionFailure, BatchPredictionResponse, PredictionListResponse, PredictionRecord
+from app.services.batch_service import BatchFilePayload
 from app.services.document_builder import build_prediction_document
 
 router = APIRouter(tags=["predictions"])
+_SOURCE_ID_SANITIZER = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _ensure_image(file: UploadFile) -> None:
@@ -29,6 +34,12 @@ def _parse_metadata(raw_metadata: str | None) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="metadata_json must be a JSON object.")
 
     return parsed
+
+
+def _build_batch_source_id(*, filename: str | None, batch_id: str, index: int) -> str:
+    token = Path(filename or f"upload-{index}").stem or f"upload-{index}"
+    sanitized = _SOURCE_ID_SANITIZER.sub("_", token).strip("._-") or f"upload-{index}"
+    return f"{sanitized}-{batch_id[:8]}-{index:04d}"
 
 
 @router.post("/predictions", response_model=PredictionRecord, status_code=status.HTTP_201_CREATED)
@@ -78,6 +89,70 @@ async def create_prediction(
         metadata=enriched_metadata,
     )
     return await repository.create(document)
+
+
+@router.post("/predictions/batch", response_model=BatchPredictionResponse, status_code=status.HTTP_201_CREATED)
+async def create_prediction_batch(
+    request: Request,
+    files: Annotated[list[UploadFile], File(...)],
+    metadata_json: Annotated[str | None, FormField()] = None,
+    batch_id: Annotated[str | None, FormField()] = None,
+) -> BatchPredictionResponse:
+    metadata = _parse_metadata(metadata_json)
+    resolved_batch_id = batch_id or uuid4().hex
+
+    batch_service = request.app.state.batch_prediction_service
+    repository = request.app.state.prediction_repository
+
+    valid_items: list[BatchFilePayload] = []
+    validation_failures: list[BatchPredictionFailure] = []
+
+    for index, file in enumerate(files, start=1):
+        try:
+            _ensure_image(file)
+        except HTTPException as exc:
+            validation_failures.append(
+                BatchPredictionFailure(
+                    filename=file.filename or f"upload-{index}",
+                    detail=str(exc.detail),
+                )
+            )
+            continue
+
+        file_bytes = await file.read()
+        if not file_bytes:
+            validation_failures.append(
+                BatchPredictionFailure(
+                    filename=file.filename or f"upload-{index}",
+                    detail="Empty files are not allowed.",
+                )
+            )
+            continue
+
+        source_id = _build_batch_source_id(filename=file.filename, batch_id=resolved_batch_id, index=index)
+        item_metadata = {
+            **metadata,
+            "batch_id": resolved_batch_id,
+            "batch_index": index,
+            "filename": file.filename or f"upload-{index}",
+            "content_type": file.content_type,
+        }
+        valid_items.append(
+            BatchFilePayload(
+                source_id=source_id,
+                filename=file.filename or f"{source_id}.bin",
+                content_type=file.content_type,
+                file_bytes=file_bytes,
+                metadata=item_metadata,
+            )
+        )
+
+    return await batch_service.process_batch(
+        batch_id=resolved_batch_id,
+        items=valid_items,
+        repository=repository,
+        validation_failures=validation_failures,
+    )
 
 
 @router.get("/predictions/{prediction_id}", response_model=PredictionRecord)

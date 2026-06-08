@@ -28,3 +28,31 @@ class IngestaClient:
         response = await self._client.post("/predictions", files=files)
         response.raise_for_status()
         return response.json()
+
+    async def create_prediction_batch(
+        self,
+        *,
+        files_payload: list[dict[str, Any]],
+        metadata: dict[str, Any],
+        batch_id: str | None = None,
+    ) -> dict[str, Any]:
+        files: list[tuple[str, tuple[Any, ...]]] = []
+        for item in files_payload:
+            files.append(
+                (
+                    "files",
+                    (
+                        item["filename"],
+                        item["file_bytes"],
+                        item["content_type"],
+                    ),
+                )
+            )
+
+        files.append(("metadata_json", (None, json.dumps(metadata))))
+        if batch_id:
+            files.append(("batch_id", (None, batch_id)))
+
+        response = await self._client.post("/predictions/batch", files=files)
+        response.raise_for_status()
+        return response.json()

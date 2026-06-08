@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.models import HealthResponse
 from app.repositories.predictions import PredictionRepository
 from app.routers.predictions import router as predictions_router
+from app.services.batch_service import BatchPredictionService
 from app.services.cloudinary_service import CloudinaryService
 from app.services.model_service import ModelServiceClient
 
@@ -31,6 +32,13 @@ async def lifespan(app: FastAPI):
     app.state.model_service = ModelServiceClient(
         base_url=settings.model_service_url,
         timeout_seconds=settings.request_timeout_seconds,
+    )
+    app.state.batch_prediction_service = BatchPredictionService(
+        cloudinary_service=app.state.cloudinary_service,
+        model_service=app.state.model_service,
+        dask_workers=settings.dask_batch_workers,
+        dask_partitions=settings.dask_batch_partitions,
+        manifest_preview_rows=settings.dask_manifest_preview_rows,
     )
     yield
     await app.state.model_service.close()
